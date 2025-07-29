@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Good SSL Checker</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <h1>GOOD SSL CHECKER</h1>
+            </div>
+            <nav class="main-nav">
+                <a href="/" class="nav-item active">
+                    <i class="fas fa-search"></i>
+                    Bulk SSL Check
+                </a>
+                <a href="/expire-tracking" class="nav-item">
+                    <i class="fas fa-calendar-alt"></i>
+                    Expiry Tracking
+                </a>
+                <a href="/logout" class="nav-item logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </a>
+            </nav>
+            <p class="subtitle">
+                Perform bulk SSL certificate checks and export detailed reports to Excel.
+            </p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Input Section -->
+            <div class="input-section">
+                <div class="input-header">
+                    <h2><i class="fas fa-list"></i> Domain List</h2>
+                    <p>Enter one domain per line. If no port is specified, default :443 will be used.</p>
+                </div>
+                
+                <div class="input-container">
+                    <textarea 
+                        id="domainList" 
+                        placeholder="Example:&#10;example.com&#10;subdomain.example.com:8000&#10;api.example.com:8443"
+                        rows="8"
+                    ></textarea>
+                    
+                    <div class="input-actions">
+                        <button id="checkBtn" class="btn btn-primary">
+                            <i class="fas fa-search"></i>
+                            Start SSL Check
+                        </button>
+                        <button id="clearBtn" class="btn btn-secondary">
+                            <i class="fas fa-trash"></i>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="input-info">
+                    <p><strong>Limit:</strong> Maximum 50 domains can be checked at once</p>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <h3><i class="fas fa-cog fa-spin"></i> Performing SSL Checks...</h3>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressText">0% completed</span>
+                    <span id="progressCount">0 / 0</span>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section" style="display: none;">
+                <div class="results-header">
+                    <h2><i class="fas fa-table"></i> SSL Certificate Report</h2>
+                    <div class="results-actions">
+                        <button id="exportBtn" class="btn btn-success">
+                            <i class="fas fa-file-excel"></i>
+                            Export to Excel
+                        </button>
+                        <button id="newCheckBtn" class="btn btn-primary">
+                            <i class="fas fa-plus"></i>
+                            New Check
+                        </button>
+                    </div>
+                </div>
+
+                <div class="results-stats">
+                    <div class="stat-card valid">
+                        <i class="fas fa-check-circle"></i>
+                        <div>
+                            <span class="stat-number" id="validCount">0</span>
+                            <span class="stat-label">Valid</span>
+                        </div>
+                    </div>
+                    <div class="stat-card warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <span class="stat-number" id="warningCount">0</span>
+                            <span class="stat-label">Expiring Soon</span>
+                        </div>
+                    </div>
+                    <div class="stat-card expired">
+                        <i class="fas fa-times-circle"></i>
+                        <div>
+                            <span class="stat-number" id="expiredCount">0</span>
+                            <span class="stat-label">Expired</span>
+                        </div>
+                    </div>
+                    <div class="stat-card error">
+                        <i class="fas fa-bug"></i>
+                        <div>
+                            <span class="stat-number" id="errorCount">0</span>
+                            <span class="stat-label">Error</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Domain</th>
+                                <th>Port</th>
+                                <th>IP</th>
+                                <th>Issuer</th>
+                                <th>Expiry Date</th>
+                                <th>Days</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <i class="fas fa-shield-alt fa-spin"></i>
+            <h3>Performing SSL Checks</h3>
+            <p>Please wait...</p>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2025 Good SSL Checker v1.20 - Made by <a href="https://github.com/birolbenli/good-ssl-checker" target="_blank" style="color: rgba(255, 255, 255, 0.9);">Birol Benli</a></p>
+    </footer>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

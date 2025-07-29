@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ domain.name }} - Good SSL Checker</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <h1>GOOD SSL CHECKER</h1>
+            </div>
+            <nav class="main-nav">
+                <a href="/" class="nav-item">
+                    <i class="fas fa-search"></i>
+                    Bulk SSL Check
+                </a>
+                <a href="/expire-tracking" class="nav-item active">
+                    <i class="fas fa-calendar-alt"></i>
+                    Expiry Tracking
+                </a>
+                <a href="/logout" class="nav-item logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </a>
+            </nav>
+            <div class="breadcrumb">
+                <a href="/expire-tracking"><i class="fas fa-arrow-left"></i> Go Back</a>
+                <span class="separator">/</span>
+                <span>{{ domain.name }}</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Domain Info Section -->
+            <div class="domain-info-section">
+                <div class="domain-title">
+                    <h2><i class="fas fa-globe"></i> {{ domain.name }}</h2>
+                    <div class="domain-actions">
+                        <button id="checkAllBtn" class="btn btn-primary">
+                            <i class="fas fa-sync-alt"></i>
+                            Check All
+                        </button>
+                        <button id="addSubdomainBtn" class="btn btn-success">
+                            <i class="fas fa-plus"></i>
+                            Add Subdomain
+                        </button>
+                        <label for="importFile" class="btn btn-secondary">
+                            <i class="fas fa-upload"></i>
+                            Import
+                        </label>
+                        <input type="file" id="importFile" accept=".xlsx,.xls" style="display: none;">
+                        <a href="/expire-tracking/domain/{{ domain.id }}/export" class="btn btn-info">
+                            <i class="fas fa-download"></i>
+                            Export
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="domain-stats-detailed">
+                    <div class="stat-card-detailed valid">
+                        <i class="fas fa-check-circle"></i>
+                        <div>
+                            <span class="stat-number">{{ subdomains|selectattr('certificate_renewal_status', 'equalto', 'Valid')|list|length }}</span>
+                            <span class="stat-label">Valid Certificate</span>
+                        </div>
+                    </div>
+                    <div class="stat-card-detailed warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <span class="stat-number">{{ subdomains|selectattr('certificate_renewal_status', 'equalto', 'Warning')|list|length }}</span>
+                            <span class="stat-label">Expiring Soon</span>
+                        </div>
+                    </div>
+                    <div class="stat-card-detailed expired">
+                        <i class="fas fa-times-circle"></i>
+                        <div>
+                            <span class="stat-number">{{ subdomains|selectattr('certificate_renewal_status', 'equalto', 'Expired')|list|length }}</span>
+                            <span class="stat-label">Expired</span>
+                        </div>
+                    </div>
+                    <div class="stat-card-detailed total">
+                        <i class="fas fa-server"></i>
+                        <div>
+                            <span class="stat-number">{{ subdomains|length }}</span>
+                            <span class="stat-label">Total Subdomains</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <h3><i class="fas fa-cog fa-spin"></i> SSL Checks in Progress...</h3>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressText">0% completed</span>
+                    <span id="progressCount">0 / 0</span>
+                </div>
+            </div>
+
+            <!-- Subdomains Table -->
+            <div class="subdomains-section">
+                <div class="table-controls">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" placeholder="Search DNS name or IP...">
+                    </div>
+                    <div class="filter-controls">
+                        <select id="statusFilter">
+                            <option value="">All Statuses</option>
+                            <option value="Valid">Valid</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Expired">Expired</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table id="subdomainsTable">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <input type="checkbox" id="selectAll">
+                                </th>
+                                <th>DNS</th>
+                                <th>Source</th>
+                                <th>Proxy</th>
+                                <th>Type</th>
+                                <th>IP</th>
+                                <th>NAT</th>
+                                <th>Port</th>
+                                <th>Owner</th>
+                                <th>Certificate</th>
+                                <th>Expiry Date</th>
+                                <th>Days</th>
+                                <th>Status</th>
+                                <th>Email</th>
+                                <th>Slack</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for subdomain in subdomains %}
+                            <tr data-subdomain-id="{{ subdomain.id }}">
+                                <td>
+                                    <input type="checkbox" class="subdomain-select" value="{{ subdomain.id }}">
+                                </td>
+                                <td><strong>{{ subdomain.dns }}</strong></td>
+                                <td>{{ subdomain.source_dns or '-' }}</td>
+                                <td>{{ subdomain.proxied or '-' }}</td>
+                                <td>{{ subdomain.record_type or '-' }}</td>
+                                <td class="ip-cell">{{ subdomain.ip or '-' }}</td>
+                                <td class="nat-cell {% if subdomain.nat %}has-nat{% endif %}">{{ subdomain.nat or '-' }}</td>
+                                <td>{{ subdomain.port }}</td>
+                                <td>{{ subdomain.owner or '-' }}</td>
+                                <td>{{ subdomain.certificate or '-' }}</td>
+                                <td>{{ subdomain.expire_date.strftime('%Y-%m-%d') if subdomain.expire_date else '-' }}</td>
+                                <td class="days-left-cell">
+                                    {% if subdomain.days_left is not none %}
+                                        <span class="days-badge {% if subdomain.days_left > 30 %}valid{% elif subdomain.days_left > 0 %}warning{% else %}expired{% endif %}">
+                                            {{ subdomain.days_left }}
+                                        </span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if subdomain.certificate_renewal_status %}
+                                        <span class="status-badge status-{{ subdomain.certificate_renewal_status.lower() }}">
+                                            {{ subdomain.certificate_renewal_status }}
+                                        </span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="notification-cell">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" class="email-notification" data-subdomain-id="{{ subdomain.id }}" 
+                                               {% if subdomain.email_notification %}checked{% endif %}>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td class="notification-cell">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" class="slack-notification" data-subdomain-id="{{ subdomain.id }}"
+                                               {% if subdomain.slack_notification %}checked{% endif %}>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td class="actions-cell">
+                                    {% if subdomain.ip %}
+                                    <div class="tooltip">
+                                        <button class="btn-small btn-primary ssl-check" data-subdomain-id="{{ subdomain.id }}" data-use-nat="false">
+                                            <i class="fas fa-search"></i>
+                                        </button>
+                                        <span class="tooltiptext">SSL Check</span>
+                                    </div>
+                                    {% endif %}
+                                    {% if subdomain.nat %}
+                                    <div class="tooltip">
+                                        <button class="btn-small btn-secondary ssl-check" data-subdomain-id="{{ subdomain.id }}" data-use-nat="true">
+                                            <i class="fas fa-network-wired"></i>
+                                        </button>
+                                        <span class="tooltiptext">NAT SSL Check</span>
+                                    </div>
+                                    {% endif %}
+                                    <div class="tooltip">
+                                        <button class="btn-small btn-warning edit-subdomain" data-subdomain-id="{{ subdomain.id }}">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <span class="tooltiptext">Edit</span>
+                                    </div>
+                                    <div class="tooltip">
+                                        <button class="btn-small btn-info send-notification" data-subdomain-id="{{ subdomain.id }}">
+                                            <i class="fas fa-bell"></i>
+                                        </button>
+                                        <span class="tooltiptext">Send Notification</span>
+                                    </div>
+                                    <div class="tooltip">
+                                        <button class="btn-small btn-danger delete-subdomain" data-subdomain-id="{{ subdomain.id }}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                        <span class="tooltiptext">Delete</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    
+                    {% if not subdomains %}
+                    <div class="empty-table-state">
+                        <i class="fas fa-server"></i>
+                        <h3>No subdomains added yet</h3>
+                        <p>You can manually add subdomains for this domain or import them from an Excel file.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Subdomain Modal -->
+    <div id="addSubdomainModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add New Subdomain</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addSubdomainForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="subdomainDns">DNS *</label>
+                            <input type="text" id="subdomainDns" placeholder="subdomain.{{ domain.name }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainSourceDns">Source DNS</label>
+                            <input type="text" id="subdomainSourceDns" placeholder="Local DNS / Cloudflare">
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainProxied">Proxied</label>
+                            <select id="subdomainProxied">
+                                <option value="">-</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainRecordType">Record Type</label>
+                            <select id="subdomainRecordType">
+                                <option value="A">A</option>
+                                <option value="CNAME">CNAME</option>
+                                <option value="MX">MX</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainIp">IP Address</label>
+                            <input type="text" id="subdomainIp" placeholder="10.34.48.150">
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainNat">NAT IP</label>
+                            <input type="text" id="subdomainNat" placeholder="5.57.215.120">
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainPort">Port</label>
+                            <input type="number" id="subdomainPort" value="443" min="1" max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label for="subdomainOwner">Owner</label>
+                            <input type="text" id="subdomainOwner" placeholder="Infrastructure">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                <button type="submit" form="addSubdomainForm" class="btn btn-success">Add Subdomain</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Subdomain Modal -->
+    <div id="editSubdomainModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Edit Subdomain</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editSubdomainForm">
+                    <input type="hidden" id="editSubdomainId">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="editSubdomainDns">DNS *</label>
+                            <input type="text" id="editSubdomainDns" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainSourceDns">Source DNS</label>
+                            <input type="text" id="editSubdomainSourceDns">
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainProxied">Proxied</label>
+                            <select id="editSubdomainProxied">
+                                <option value="">-</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainRecordType">Record Type</label>
+                            <select id="editSubdomainRecordType">
+                                <option value="A">A</option>
+                                <option value="CNAME">CNAME</option>
+                                <option value="MX">MX</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainIp">IP Address</label>
+                            <input type="text" id="editSubdomainIp">
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainNat">NAT IP</label>
+                            <input type="text" id="editSubdomainNat">
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainPort">Port</label>
+                            <input type="number" id="editSubdomainPort" min="1" max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label for="editSubdomainOwner">Owner</label>
+                            <input type="text" id="editSubdomainOwner">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                <button type="submit" form="editSubdomainForm" class="btn btn-primary">Update</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2025 Good SSL Checker v1.20 - Made by <a href="https://github.com/birolbenli/good-ssl-checker" target="_blank" style="color: rgba(255, 255, 255, 0.9);">Birol Benli</a></p>
+    </footer>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const DOMAIN_ID = {{ domain.id }};
+    </script>
+    <script src="{{ url_for('static', filename='js/domain-detail.js') }}"></script>
+</body>
+</html>
