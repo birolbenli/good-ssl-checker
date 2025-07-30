@@ -200,7 +200,9 @@ class SSLChecker {
             if (result.status === 'error') {
                 error++;
             } else {
-                const daysLeft = result.days_left;
+                // Access nested ssl_info data or fallback to direct properties
+                const sslInfo = result.ssl_info || {};
+                const daysLeft = sslInfo.days_left || result.days_left;
                 if (daysLeft < 0) {
                     expired++;
                 } else if (daysLeft < 30) {
@@ -244,7 +246,9 @@ class SSLChecker {
             const row = document.createElement('tr');
             
             if (result.status === 'success') {
-                const daysLeft = result.days_left;
+                // Access nested ssl_info data
+                const sslInfo = result.ssl_info || {};
+                const daysLeft = sslInfo.days_left || result.days_left;
                 let statusClass, statusText, statusIcon;
                 
                 if (daysLeft < 0) {
@@ -265,10 +269,10 @@ class SSLChecker {
                     <td>${index + 1}</td>
                     <td><strong>${result.domain}</strong></td>
                     <td>${result.port}</td>
-                    <td>${result.ip}</td>
-                    <td>${result.issuer}</td>
-                    <td>${result.expiry_date}</td>
-                    <td>${daysLeft}</td>
+                    <td>${result.resolved_ip || result.ip || '-'}</td>
+                    <td>${sslInfo.issuer || result.issuer || '-'}</td>
+                    <td>${sslInfo.expire_date || result.expiry_date || '-'}</td>
+                    <td>${daysLeft || '-'}</td>
                     <td><span class="status-badge ${statusClass}"><i class="${statusIcon}"></i> ${statusText}</span></td>
                 `;
             } else {
@@ -279,7 +283,7 @@ class SSLChecker {
                     <td colspan="4">-</td>
                     <td><span class="status-badge status-error"><i class="fas fa-bug"></i> ERROR</span></td>
                 `;
-                row.title = result.error;
+                row.title = result.message || result.error;
             }
             
             this.resultsBody.appendChild(row);
