@@ -846,9 +846,11 @@ def import_excel(domain_id):
 
 @app.route('/expire-tracking/subdomain/<int:subdomain_id>/update', methods=['PUT'])
 def update_subdomain(subdomain_id):
-    data = request.get_json()
-    
     try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
         with get_db_connection() as conn:
             conn.execute('''
                 UPDATE subdomain SET 
@@ -870,6 +872,7 @@ def update_subdomain(subdomain_id):
         
         return jsonify({'success': True})
     except Exception as e:
+        print(f"❌ Update subdomain error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/expire-tracking/subdomain/<int:subdomain_id>/delete', methods=['DELETE'])

@@ -435,13 +435,19 @@ class DomainDetailManager {
         }
 
         try {
-            const response = await fetch(`/expire-tracking/subdomain/${subdomainId}/edit`, {
+            const response = await fetch(`/expire-tracking/subdomain/${subdomainId}/update`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(formData)
             });
+
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('Server returned non-JSON response');
+            }
 
             const result = await response.json();
 
@@ -453,6 +459,7 @@ class DomainDetailManager {
                 this.showToast(result.error || 'Update error', 'error');
             }
         } catch (error) {
+            console.error('Edit subdomain error:', error);
             this.showToast('Connection error: ' + error.message, 'error');
         }
     }
