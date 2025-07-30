@@ -71,6 +71,18 @@ data/
 # Configuration files with sensitive data
 config.json
 
+# IDE and development tools
+.vscode/
+.github/
+*.code-workspace
+
+# Logs
+logs/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
 # Scrapy stuff:
 .scrapy
 
