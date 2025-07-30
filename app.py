@@ -369,11 +369,25 @@ def check_bulk_ssl():
                 
                 # Check SSL
                 ssl_info = ssl_checker.get_ssl_info_by_ip(ip, port, hostname)
-                ssl_info['domain'] = domain_line
-                ssl_info['resolved_ip'] = ip
-                ssl_info['port'] = port
                 
-                results.append(ssl_info)
+                # Organize data for export
+                result_data = {
+                    'domain': domain_line,
+                    'resolved_ip': ip,
+                    'port': port,
+                    'status': ssl_info.get('status', 'error'),
+                    'message': ssl_info.get('message', ''),
+                    'ssl_info': {
+                        'valid': ssl_info.get('status') == 'success',
+                        'issuer': ssl_info.get('issuer', ''),
+                        'subject': ssl_info.get('subject', ''),
+                        'expire_date': ssl_info.get('expiry_date', ''),
+                        'days_left': ssl_info.get('days_left', ''),
+                        'serial_number': ssl_info.get('serial_number', '')
+                    }
+                }
+                
+                results.append(result_data)
                 
             except socket.gaierror:
                 # DNS resolution failed
@@ -1122,6 +1136,81 @@ def setup_scheduler():
             print(f"Notification scheduler started - will run daily at {schedule_time}")
     except Exception as e:
         print(f"Scheduler setup error: {e}")
+
+@app.route('/export')
+@login_required
+def export_bulk_ssl():
+    """Export bulk SSL checker results to Excel"""
+    try:
+        from openpyxl import Workbook
+        from flask import send_file
+        import io
+        
+        # Get current session data from request parameters
+        session_id = request.args.get('session_id')
+        
+        if not session_id or session_id not in ssl_checker.results:
+            return jsonify({'error': 'No data available for export'}), 400
+        
+        session_data = ssl_checker.results[session_id]
+        
+        if not session_data.get('completed', False):
+            return jsonify({'error': 'SSL check not completed yet'}), 400
+        
+        # Get results data - using 'results' key not 'domains'
+        domains_data = session_data.get('results', [])
+        
+        if not domains_data:
+            return jsonify({'error': 'No domains found in session data'}), 400
+        
+        # Create Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Bulk_SSL_Report"
+        
+        # Headers
+        headers = [
+            'Domain', 'Port', 'Status', 'Certificate Valid', 'Issuer', 
+            'Expire Date', 'Days Left', 'Subject', 'Serial Number', 'Resolved IP', 'Message'
+        ]
+        ws.append(headers)
+        
+        # Data
+        for domain_info in domains_data:
+            ssl_info = domain_info.get('ssl_info', {})
+            row = [
+                domain_info.get('domain', ''),
+                domain_info.get('port', 443),
+                domain_info.get('status', ''),
+                'Yes' if ssl_info.get('valid') else 'No',
+                ssl_info.get('issuer', ''),
+                ssl_info.get('expire_date', ''),
+                ssl_info.get('days_left', ''),
+                ssl_info.get('subject', ''),
+                ssl_info.get('serial_number', ''),
+                domain_info.get('resolved_ip', ''),
+                domain_info.get('message', '')
+            ]
+            ws.append(row)
+        
+        # Save to BytesIO
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'bulk_ssl_report_{timestamp}.xlsx'
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Export error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():

@@ -311,15 +311,15 @@ class SSLChecker {
 
     async exportToExcel() {
         if (!this.currentSessionId) {
-            this.showToast('Dışa aktarılacak veri bulunamadı', 'error');
+            this.showToast('No data available for export', 'error');
             return;
         }
         
         try {
             this.exportBtn.disabled = true;
-            this.exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Excel Hazırlanıyor...';
+            this.exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing Excel...';
             
-            const response = await fetch('/export');
+            const response = await fetch(`/export?session_id=${this.currentSessionId}`);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -342,7 +342,7 @@ class SSLChecker {
             this.showToast(`Excel export error: ${error.message}`, 'error');
         } finally {
             this.exportBtn.disabled = false;
-            this.exportBtn.innerHTML = '<i class="fas fa-file-excel"></i> Excel\'e Aktar';
+            this.exportBtn.innerHTML = '<i class="fas fa-file-excel"></i> Export to Excel';
         }
     }
 }
