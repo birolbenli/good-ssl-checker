@@ -116,7 +116,7 @@ class SSLChecker:
             
             # Create socket connection to IP
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)  # Fast timeout - 3 seconds for quicker response
+            sock.settimeout(10)  # Extended timeout - 10 seconds for better reliability
             
             # Connect to IP:port
             sock.connect((ip, port))
@@ -204,7 +204,7 @@ class SSLChecker:
             print(f"❌ Connection timeout to {ip}:{port}")
             return {
                 'status': 'error',
-                'message': 'Connection timeout (3s)'
+                'message': 'Connection timeout (10s) - Server may be down or port blocked'
             }
         except ConnectionRefusedError:
             print(f"❌ Connection refused to {ip}:{port}")
@@ -574,17 +574,34 @@ def check_subdomain_ssl(subdomain_id):
         if not subdomain:
             return jsonify({'error': 'Subdomain not found'}), 404
     
-    # Choose IP based on use_nat parameter
-    if use_nat and subdomain['nat']:
-        target_ip = str(subdomain['nat']).strip()
-    else:
-        target_ip = str(subdomain['ip']).strip()
+    # SSL Check Logic:
+    # 1. NAT SSL Check -> Use NAT IP
+    # 2. Proxied Yes -> Use domain name (DNS resolution)
+    # 3. Proxied No -> Use stored IP address
     
-    if not target_ip:
-        return jsonify({'error': 'No IP address available'}), 400
+    hostname = subdomain['dns']
+    port = subdomain['port']
+    
+    if use_nat and subdomain['nat']:
+        # NAT SSL Check - use NAT IP
+        target_ip = str(subdomain['nat']).strip()
+        print(f"🔧 NAT SSL Check: {hostname} via NAT IP {target_ip}:{port}")
+    elif subdomain['proxied'] == 'Yes':
+        # Proxied Yes - use domain name (resolve DNS in real-time)
+        try:
+            target_ip = socket.gethostbyname(subdomain['dns'])
+            print(f"🌐 Proxied SSL Check: {hostname} resolved to {target_ip}:{port}")
+        except socket.gaierror:
+            return jsonify({'error': f'Cannot resolve DNS for {subdomain["dns"]}'}), 400
+    else:
+        # Proxied No or empty - use stored IP address
+        target_ip = str(subdomain['ip']).strip()
+        if not target_ip or target_ip == 'None':
+            return jsonify({'error': f'No IP address stored for {subdomain["dns"]}'}), 400
+        print(f"🎯 Direct IP SSL Check: {hostname} via stored IP {target_ip}:{port}")
     
     try:
-        ssl_info = ssl_checker.get_ssl_info_by_ip(target_ip, subdomain['port'], subdomain['dns'])
+        ssl_info = ssl_checker.get_ssl_info_by_ip(target_ip, port, hostname)
         
         if ssl_info['status'] == 'success':
             # Update database
@@ -635,11 +652,34 @@ def check_all_domain_ssl(domain_id):
             i, subdomain = index_subdomain
             print(f"Checking subdomain {i+1}/{total_subdomains}: {subdomain['dns']}")
             
-            if subdomain['ip']:
-                # Clean IP address (remove whitespace)
-                clean_ip = str(subdomain['ip']).strip()
-                print(f"SSL checking {subdomain['dns']} at {clean_ip}:{subdomain['port']}")
-                ssl_info = ssl_checker.get_ssl_info_by_ip(clean_ip, subdomain['port'], subdomain['dns'])
+            # Apply same logic as individual SSL check:
+            # 1. Proxied Yes -> Use domain name (DNS resolution)
+            # 2. Proxied No -> Use stored IP address
+            
+            hostname = subdomain['dns']
+            port = subdomain['port']
+            
+            if subdomain['proxied'] == 'Yes':
+                # Proxied Yes - use domain name (resolve DNS in real-time)
+                try:
+                    target_ip = socket.gethostbyname(subdomain['dns'])
+                    print(f"🌐 Proxied SSL Check: {hostname} resolved to {target_ip}:{port}")
+                except socket.gaierror:
+                    ssl_info = {'status': 'error', 'message': f'Cannot resolve DNS for {subdomain["dns"]}'}
+                    print(f"❌ DNS resolution failed for {subdomain['dns']}")
+                    target_ip = None
+            else:
+                # Proxied No or empty - use stored IP address
+                target_ip = str(subdomain['ip']).strip() if subdomain['ip'] else None
+                if not target_ip or target_ip == 'None':
+                    ssl_info = {'status': 'error', 'message': f'No IP address stored for {subdomain["dns"]}'}
+                    print(f"❌ No IP address for {subdomain['dns']}")
+                    target_ip = None
+                else:
+                    print(f"🎯 Direct IP SSL Check: {hostname} via stored IP {target_ip}:{port}")
+            
+            if target_ip:
+                ssl_info = ssl_checker.get_ssl_info_by_ip(target_ip, port, hostname)
                 print(f"SSL result for {subdomain['dns']}: {ssl_info}")
                 
                 if ssl_info['status'] == 'success':
@@ -673,21 +713,26 @@ def check_all_domain_ssl(domain_id):
                         ))
                         conn.commit()
                         print(f"❌ SSL check failed for {subdomain['dns']}: {ssl_info.get('message', 'Unknown error')}")
-                
-                return {
-                    'subdomain_id': subdomain['id'],
-                    'dns': subdomain['dns'],
-                    'result': ssl_info,
-                    'index': i
-                }
             else:
-                print(f"⚠️  Skipping subdomain {subdomain['dns']} - no IP address")
-                return {
-                    'subdomain_id': subdomain['id'],
-                    'dns': subdomain['dns'],
-                    'result': {'status': 'error', 'message': 'No IP address'},
-                    'index': i
-                }
+                # Error case already handled above
+                with get_db_connection() as conn:
+                    conn.execute('''
+                        UPDATE subdomain SET 
+                        certificate_renewal_status = ?, last_checked = ?
+                        WHERE id = ?
+                    ''', (
+                        'Error',
+                        datetime.datetime.now().isoformat(),
+                        subdomain['id']
+                    ))
+                    conn.commit()
+            
+            return {
+                'subdomain_id': subdomain['id'],
+                'dns': subdomain['dns'],
+                'result': ssl_info,
+                'index': i
+            }
         
         # Use ThreadPoolExecutor for parallel processing (max 5 concurrent)
         completed_count = 0
@@ -1216,6 +1261,30 @@ def export_bulk_ssl():
 def health_check():
     """Health check endpoint for Docker"""
     return jsonify({'status': 'healthy', 'timestamp': datetime.datetime.now().isoformat()})
+
+@app.route('/test-ssl/<host>')
+def test_ssl_endpoint(host):
+    """Quick SSL test endpoint for debugging"""
+    try:
+        # Basic validation
+        if not host or len(host) > 100:
+            return jsonify({'error': 'Invalid host'}), 400
+            
+        # Try to resolve if it's a domain
+        try:
+            ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            # If it fails, assume it's already an IP
+            ip = host
+            
+        result = ssl_checker.get_ssl_info_by_ip(ip, 443, host)
+        return jsonify({
+            'host': host,
+            'ip': ip,
+            'result': result
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Create instance directory
