@@ -49,6 +49,104 @@ def get_db_connection():
     finally:
         conn.close()
 
+def init_default_settings(conn):
+    """Initialize default settings in the database"""
+    default_settings = [
+        # SMTP Settings
+        ('smtp_server', 'smtp.gmail.com', 'smtp', 'string', 'SMTP server hostname'),
+        ('smtp_port', '587', 'smtp', 'number', 'SMTP server port'),
+        ('smtp_username', '', 'smtp', 'string', 'SMTP username'),
+        ('smtp_password', '', 'smtp', 'password', 'SMTP password'),
+        ('smtp_from_email', '', 'smtp', 'string', 'From email address'),
+        ('smtp_use_tls', 'true', 'smtp', 'boolean', 'Use TLS encryption'),
+        
+        # Default Email Settings
+        ('default_to_email', '', 'email', 'string', 'Default recipient email address'),
+        
+        # Default Slack Settings
+        ('default_slack_webhook', '', 'slack', 'string', 'Default Slack webhook URL'),
+        ('slack_channel', '#ssl-alerts', 'slack', 'string', 'Default Slack channel'),
+        ('slack_username', 'SSL Checker Bot', 'slack', 'string', 'Slack bot username'),
+        ('slack_icon_emoji', ':warning:', 'slack', 'string', 'Slack bot emoji'),
+        
+        # Notification Settings
+        ('notifications_enabled', 'true', 'notifications', 'boolean', 'Enable notifications'),
+        ('schedule_time', '09:00', 'notifications', 'string', 'Daily notification time (HH:MM)'),
+        ('expiry_thresholds', '7,15,30', 'notifications', 'string', 'Days before expiry to send alerts (comma separated)'),
+        ('email_enabled', 'true', 'notifications', 'boolean', 'Enable email notifications'),
+        ('slack_enabled', 'true', 'notifications', 'boolean', 'Enable Slack notifications'),
+    ]
+    
+    for key, value, category, type_name, description in default_settings:
+        # Check if setting already exists
+        existing = conn.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
+        if not existing:
+            conn.execute('''
+                INSERT INTO settings (key, value, category, type, description)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (key, value, category, type_name, description))
+
+def get_setting(key, default_value=None):
+    """Get a setting value from database"""
+    try:
+        with get_db_connection() as conn:
+            result = conn.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+            return result['value'] if result else default_value
+    except Exception as e:
+        print(f"Error getting setting {key}: {e}")
+        return default_value
+
+def set_setting(key, value):
+    """Set a setting value in database"""
+    try:
+        with get_db_connection() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+            ''', (key, value, datetime.datetime.now().isoformat()))
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"Error setting {key}: {e}")
+        return False
+
+def get_all_settings():
+    """Get all settings grouped by category"""
+    try:
+        with get_db_connection() as conn:
+            results = conn.execute('''
+                SELECT key, value, category, type, description 
+                FROM settings 
+                ORDER BY category, key
+            ''').fetchall()
+            
+            settings = {}
+            for row in results:
+                category = row['category']
+                if category not in settings:
+                    settings[category] = {}
+                
+                value = row['value']
+                # Convert boolean strings
+                if row['type'] == 'boolean':
+                    value = value.lower() == 'true'
+                elif row['type'] == 'number':
+                    try:
+                        value = int(value)
+                    except:
+                        value = 0
+                
+                settings[category][row['key']] = {
+                    'value': value,
+                    'type': row['type'],
+                    'description': row['description']
+                }
+            
+            return settings
+    except Exception as e:
+        print(f"Error getting all settings: {e}")
+        return {}
+
 def init_db():
     """Initialize the database with required tables"""
     with get_db_connection() as conn:
@@ -79,7 +177,21 @@ def init_db():
                 last_checked DATETIME,
                 email_notification INTEGER DEFAULT 1,
                 slack_notification INTEGER DEFAULT 1,
+                custom_email TEXT,
+                custom_slack_webhook TEXT,
                 FOREIGN KEY (domain_id) REFERENCES domain (id)
+            )
+        ''')
+        
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                value TEXT,
+                category TEXT,
+                type TEXT DEFAULT 'string',
+                description TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -93,6 +205,19 @@ def init_db():
             conn.execute('ALTER TABLE subdomain ADD COLUMN slack_notification INTEGER DEFAULT 1')
         except sqlite3.OperationalError:
             pass  # Column already exists
+            
+        try:
+            conn.execute('ALTER TABLE subdomain ADD COLUMN custom_email TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+            
+        try:
+            conn.execute('ALTER TABLE subdomain ADD COLUMN custom_slack_webhook TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        # Initialize default settings
+        init_default_settings(conn)
         
         conn.commit()
 
@@ -426,6 +551,173 @@ def check_bulk_ssl():
     thread.start()
     
     return jsonify({'session_id': session_id})
+
+@app.route('/settings')
+@login_required
+def settings_page():
+    """Settings management page"""
+    ensure_db()
+    settings = get_all_settings()
+    return render_template('settings.html', settings=settings)
+
+@app.route('/api/settings', methods=['GET'])
+@login_required
+def get_settings_api():
+    """Get all settings API"""
+    settings = get_all_settings()
+    return jsonify(settings)
+
+@app.route('/api/settings', methods=['POST'])
+@login_required
+def update_settings_api():
+    """Update settings API"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        print(f"Settings update received: {data}")
+        
+        updated_count = 0
+        with get_db_connection() as conn:
+            for key, value in data.items():
+                # Convert boolean values to string
+                if isinstance(value, bool):
+                    value = 'true' if value else 'false'
+                
+                print(f"Updating setting: {key} = {value}")
+                
+                conn.execute('''
+                    UPDATE settings SET value = ?, updated_at = ?
+                    WHERE key = ?
+                ''', (str(value), datetime.datetime.now().isoformat(), key))
+                updated_count += 1
+            
+            conn.commit()
+        
+        print(f"Updated {updated_count} settings successfully")
+        
+        return jsonify({
+            'success': True, 
+            'message': f'{updated_count} settings updated successfully'
+        })
+        
+    except Exception as e:
+        print(f"Settings update error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/test-email', methods=['POST'])
+@login_required
+def test_email_settings():
+    """Test email settings"""
+    try:
+        data = request.get_json()
+        test_email = data.get('test_email')
+        
+        if not test_email:
+            return jsonify({'error': 'Test email address required'}), 400
+        
+        # Get current SMTP settings from database
+        smtp_server = get_setting('smtp_server')
+        smtp_port_str = get_setting('smtp_port', '587')
+        smtp_username = get_setting('smtp_username')
+        smtp_password = get_setting('smtp_password')
+        from_email = get_setting('smtp_from_email')
+        use_tls = get_setting('smtp_use_tls', 'true').lower() == 'true'
+        
+        print(f"SMTP Settings Debug:")
+        print(f"  Server: {smtp_server}")
+        print(f"  Port: {smtp_port_str}")
+        print(f"  Username: {smtp_username}")
+        print(f"  Password: {'***' if smtp_password else 'EMPTY'}")
+        print(f"  From Email: {from_email}")
+        print(f"  Use TLS: {use_tls}")
+        
+        # Validate settings
+        missing_settings = []
+        if not smtp_server or smtp_server.strip() == '':
+            missing_settings.append('SMTP Server')
+        if not smtp_username or smtp_username.strip() == '':
+            missing_settings.append('SMTP Username')
+        if not smtp_password or smtp_password.strip() == '':
+            missing_settings.append('SMTP Password')
+        if not from_email or from_email.strip() == '':
+            missing_settings.append('From Email')
+            
+        if missing_settings:
+            return jsonify({
+                'error': f'SMTP settings are incomplete. Missing: {", ".join(missing_settings)}'
+            }), 400
+        
+        try:
+            smtp_port = int(smtp_port_str)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid SMTP port number'}), 400
+        
+        # Send test email
+        msg = email.mime.multipart.MIMEMultipart()
+        msg['From'] = from_email
+        msg['To'] = test_email
+        msg['Subject'] = 'SSL Checker - Test Email'
+        
+        body = """
+        This is a test email from SSL Checker.
+        
+        If you received this email, your SMTP configuration is working correctly.
+        
+        Test sent at: """ + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        msg.attach(email.mime.text.MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        if use_tls:
+            server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Test email sent successfully to {test_email}'
+        })
+        
+    except Exception as e:
+        print(f"Email test error: {e}")
+        return jsonify({'error': f'Email test failed: {str(e)}'}), 500
+
+@app.route('/api/settings/test-slack', methods=['POST'])
+@login_required
+def test_slack_settings():
+    """Test Slack settings"""
+    try:
+        data = request.get_json()
+        webhook_url = data.get('webhook_url') or get_setting('default_slack_webhook')
+        
+        if not webhook_url:
+            return jsonify({'error': 'Slack webhook URL required'}), 400
+        
+        if 'YOUR/SLACK/WEBHOOK' in webhook_url:
+            return jsonify({'error': 'Please configure a real Slack webhook URL'}), 400
+        
+        # Send test message
+        message = {
+            "text": f"🧪 SSL Checker Test Message - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        }
+        
+        response = requests.post(webhook_url, json=message, timeout=10)
+        
+        if response.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': 'Test message sent successfully to Slack'
+            })
+        else:
+            return jsonify({
+                'error': f'Slack test failed: HTTP {response.status_code} - {response.text}'
+            }), 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Slack test failed: {str(e)}'}), 500
 
 @app.route('/expire-tracking')
 @login_required
@@ -903,6 +1195,35 @@ def import_excel(domain_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/expire-tracking/subdomain/<int:subdomain_id>/update-settings', methods=['POST'])
+@login_required
+def update_subdomain_settings(subdomain_id):
+    """Update subdomain-specific notification settings"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        custom_email = data.get('custom_email', '').strip()
+        custom_slack_webhook = data.get('custom_slack_webhook', '').strip()
+        
+        # Convert empty strings to None for database
+        custom_email = custom_email if custom_email else None
+        custom_slack_webhook = custom_slack_webhook if custom_slack_webhook else None
+        
+        with get_db_connection() as conn:
+            conn.execute('''
+                UPDATE subdomain SET 
+                custom_email = ?, custom_slack_webhook = ?
+                WHERE id = ?
+            ''', (custom_email, custom_slack_webhook, subdomain_id))
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Subdomain settings updated successfully'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/expire-tracking/subdomain/<int:subdomain_id>/update', methods=['PUT'])
 def update_subdomain(subdomain_id):
     try:
@@ -990,23 +1311,6 @@ def send_manual_notification(subdomain_id):
         if not notification_type:
             return jsonify({'error': 'Notification type not specified'}), 400
         
-        # Load config with better error handling
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
-        if not os.path.exists(config_path):
-            return jsonify({'error': 'Configuration file not found'}), 500
-            
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-        except json.JSONDecodeError as e:
-            return jsonify({'error': f'Invalid JSON in config file: {str(e)}'}), 500
-        except Exception as e:
-            return jsonify({'error': f'Cannot read config file: {str(e)}'}), 500
-        
-        # Check if notifications are enabled
-        if not config.get('notifications', {}).get('enabled', False):
-            return jsonify({'error': 'Notifications are disabled in configuration'}), 400
-        
         ensure_db()
         with get_db_connection() as conn:
             subdomain = conn.execute('SELECT * FROM subdomain WHERE id = ?', (subdomain_id,)).fetchone()
@@ -1016,11 +1320,11 @@ def send_manual_notification(subdomain_id):
         subdomain_dict = dict(subdomain)
         
         if notification_type == 'email':
-            success = send_email_notification(subdomain_dict, config)
+            success = send_email_notification(subdomain_dict)
             message = 'Email notification sent successfully!' if success else 'Email notification failed to send'
         elif notification_type == 'slack':
-            success = send_slack_notification(subdomain_dict, config)
-            message = 'Slack notification sent successfully!' if success else 'Slack notification failed to send. Check webhook URL in config.json'
+            success = send_slack_notification(subdomain_dict)
+            message = 'Slack notification sent successfully!' if success else 'Slack notification failed to send. Check webhook URL in settings'
         else:
             return jsonify({'error': 'Invalid notification type'}), 400
         
@@ -1034,17 +1338,34 @@ def send_manual_notification(subdomain_id):
         return jsonify({'error': str(e)}), 500
 
 # Notification functions
-def send_email_notification(subdomain, config):
+def send_email_notification(subdomain, config=None):
     """Send email notification for SSL expiry"""
     try:
-        # Check if email notifications are enabled
-        email_config = config.get('notifications', {}).get('email', {})
-        if not email_config.get('enabled', False):
+        # Get email settings from database
+        smtp_server = get_setting('smtp_server')
+        smtp_port = int(get_setting('smtp_port', '587'))
+        smtp_username = get_setting('smtp_username')
+        smtp_password = get_setting('smtp_password')
+        from_email = get_setting('smtp_from_email')
+        use_tls = get_setting('smtp_use_tls', 'true').lower() == 'true'
+        email_enabled = get_setting('email_enabled', 'true').lower() == 'true'
+        
+        if not email_enabled:
+            return False
+            
+        if not all([smtp_server, smtp_username, smtp_password, from_email]):
+            print("Email settings incomplete")
+            return False
+        
+        # Use custom email for subdomain if set, otherwise use default
+        to_email = subdomain.get('custom_email') or get_setting('default_to_email')
+        if not to_email:
+            print("No recipient email configured")
             return False
             
         msg = email.mime.multipart.MIMEMultipart()
-        msg['From'] = email_config['from_email']
-        msg['To'] = email_config['to_email']
+        msg['From'] = from_email
+        msg['To'] = to_email
         msg['Subject'] = f"SSL Certificate Expiry Alert - {subdomain['dns']}"
         
         body = f"""
@@ -1053,13 +1374,19 @@ def send_email_notification(subdomain, config):
         Domain: {subdomain['dns']}
         Days Left: {subdomain.get('days_left', 'Unknown')}
         Expiry Date: {subdomain.get('expire_date', 'Unknown')}
+        Certificate Issuer: {subdomain.get('certificate', 'Unknown')}
+        
+        Please renew the SSL certificate before it expires.
+        
+        Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """
         
         msg.attach(email.mime.text.MIMEText(body, 'plain'))
         
-        server = smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port'])
-        server.starttls()
-        server.login(email_config['username'], email_config['password'])
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        if use_tls:
+            server.starttls()
+        server.login(smtp_username, smtp_password)
         server.send_message(msg)
         server.quit()
         
@@ -1068,18 +1395,18 @@ def send_email_notification(subdomain, config):
         print(f"Email send error: {e}")
         return False
 
-def send_slack_notification(subdomain, config):
+def send_slack_notification(subdomain, config=None):
     """Send Slack notification for SSL expiry"""
     try:
-        # Check if slack notifications are enabled
-        slack_config = config.get('notifications', {}).get('slack', {})
-        if not slack_config.get('enabled', False):
-            print("Slack notifications are disabled in config")
+        slack_enabled = get_setting('slack_enabled', 'true').lower() == 'true'
+        if not slack_enabled:
+            print("Slack notifications are disabled")
             return False
-            
-        webhook_url = slack_config.get('webhook_url')
+        
+        # Use custom webhook for subdomain if set, otherwise use default
+        webhook_url = subdomain.get('custom_slack_webhook') or get_setting('default_slack_webhook')
         if not webhook_url:
-            print("Slack webhook URL is not configured")
+            print("No Slack webhook URL configured")
             return False
             
         # Check if webhook URL is valid (not placeholder)
@@ -1090,17 +1417,50 @@ def send_slack_notification(subdomain, config):
         days_left = subdomain.get('days_left', 0)
         emoji = "🔴" if days_left <= 7 else "🟡" if days_left <= 30 else "🟢"
         
-        # Simple text-only message for better compatibility
+        # Get Slack settings
+        channel = get_setting('slack_channel', '#ssl-alerts')
+        username = get_setting('slack_username', 'SSL Checker Bot')
+        icon_emoji = get_setting('slack_icon_emoji', ':warning:')
+        
+        # Enhanced Slack message
         message = {
-            "text": f"{emoji} SSL Certificate Alert: {subdomain['dns']} expires in {days_left} days"
+            "text": f"{emoji} SSL Certificate Alert",
+            "username": username,
+            "icon_emoji": icon_emoji,
+            "channel": channel,
+            "attachments": [
+                {
+                    "color": "danger" if days_left <= 7 else "warning" if days_left <= 30 else "good",
+                    "fields": [
+                        {
+                            "title": "Domain",
+                            "value": subdomain['dns'],
+                            "short": True
+                        },
+                        {
+                            "title": "Days Left",
+                            "value": str(days_left),
+                            "short": True
+                        },
+                        {
+                            "title": "Expiry Date",
+                            "value": subdomain.get('expire_date', 'Unknown'),
+                            "short": True
+                        },
+                        {
+                            "title": "Certificate Issuer",
+                            "value": subdomain.get('certificate', 'Unknown'),
+                            "short": True
+                        }
+                    ]
+                }
+            ]
         }
         
         print(f"Sending Slack notification to: {webhook_url[:50]}...")
-        print(f"Message payload: {message}")
         response = requests.post(webhook_url, json=message, timeout=10)
         
         print(f"Slack response status: {response.status_code}")
-        print(f"Slack response text: {response.text}")
         
         if response.status_code == 200:
             print("✅ Slack notification sent successfully")
@@ -1119,17 +1479,22 @@ def send_slack_notification(subdomain, config):
 def check_and_send_notifications():
     """Scheduled job to check SSL certificates and send notifications"""
     try:
-        # Load config
-        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        if not config['notifications']['enabled']:
+        # Get notification settings from database
+        notifications_enabled = get_setting('notifications_enabled', 'true').lower() == 'true'
+        if not notifications_enabled:
+            print("Notifications are disabled")
             return
         
-        # Get all subdomains that need SSL expiry alerts
-        thresholds = config['notifications']['expiry_thresholds']
+        # Get expiry thresholds
+        thresholds_str = get_setting('expiry_thresholds', '7,15,30')
+        try:
+            thresholds = [int(x.strip()) for x in thresholds_str.split(',') if x.strip()]
+        except:
+            thresholds = [7, 15, 30]  # fallback
         
+        print(f"Checking SSL certificates with thresholds: {thresholds}")
+        
+        # Get all subdomains that need SSL expiry alerts
         with get_db_connection() as conn:
             for threshold in thresholds:
                 # Find subdomains expiring in threshold days
@@ -1143,13 +1508,21 @@ def check_and_send_notifications():
                 for subdomain in subdomains:
                     subdomain_dict = dict(subdomain)
                     
-                    # Send email if enabled
-                    if subdomain['email_notification'] and config['notifications']['email']['enabled']:
-                        send_email_notification(subdomain_dict, config)
+                    # Send email if enabled for this subdomain
+                    if subdomain['email_notification']:
+                        success = send_email_notification(subdomain_dict)
+                        if success:
+                            print(f"✅ Email sent for {subdomain['dns']} ({subdomain['days_left']} days left)")
+                        else:
+                            print(f"❌ Email failed for {subdomain['dns']}")
                     
-                    # Send Slack if enabled
-                    if subdomain['slack_notification'] and config['notifications']['slack']['enabled']:
-                        send_slack_notification(subdomain_dict, config)
+                    # Send Slack if enabled for this subdomain
+                    if subdomain['slack_notification']:
+                        success = send_slack_notification(subdomain_dict)
+                        if success:
+                            print(f"✅ Slack sent for {subdomain['dns']} ({subdomain['days_left']} days left)")
+                        else:
+                            print(f"❌ Slack failed for {subdomain['dns']}")
         
         print(f"Notification check completed at {datetime.datetime.now()}")
         
@@ -1165,12 +1538,10 @@ def run_scheduler():
 def setup_scheduler():
     """Setup scheduled jobs"""
     try:
-        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        notifications_enabled = get_setting('notifications_enabled', 'true').lower() == 'true'
         
-        if config['notifications']['enabled']:
-            schedule_time = config['notifications']['schedule_time']
+        if notifications_enabled:
+            schedule_time = get_setting('schedule_time', '09:00')
             schedule.every().day.at(schedule_time).do(check_and_send_notifications)
             
             # Start scheduler in background thread
@@ -1179,6 +1550,8 @@ def setup_scheduler():
             scheduler_thread.start()
             
             print(f"Notification scheduler started - will run daily at {schedule_time}")
+        else:
+            print("Notification scheduler disabled")
     except Exception as e:
         print(f"Scheduler setup error: {e}")
 

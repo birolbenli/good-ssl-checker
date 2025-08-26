@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Good SSL Checker</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .settings-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .settings-section {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        
+        .settings-section h3 {
+            color: #1a365d;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3182ce;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+        }
+        
+        .form-group small {
+            color: #718096;
+            font-size: 12px;
+            margin-top: 4px;
+            display: block;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        
+        .test-btn {
+            background: #38a169;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .test-btn:hover {
+            background: #2f855a;
+        }
+        
+        .test-btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .alert-success {
+            background: #c6f6d5;
+            border: 1px solid #38a169;
+            color: #22543d;
+        }
+        
+        .alert-error {
+            background: #fed7d7;
+            border: 1px solid #e53e3e;
+            color: #742a2a;
+        }
+        
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            .btn-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <h1>GOOD SSL CHECKER</h1>
+            </div>
+            <nav class="main-nav">
+                <a href="/" class="nav-item">
+                    <i class="fas fa-search"></i>
+                    Bulk SSL Check
+                </a>
+                <a href="/expire-tracking" class="nav-item">
+                    <i class="fas fa-calendar-alt"></i>
+                    Expiry Tracking
+                </a>
+                <a href="/settings" class="nav-item active">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </a>
+                <a href="/logout" class="nav-item logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </a>
+            </nav>
+            <p class="subtitle">
+                Manage application settings, SMTP configuration, and notification preferences.
+            </p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="settings-container">
+                <!-- Alert Messages -->
+                <div id="alert" class="alert"></div>
+
+                <!-- SMTP Settings -->
+                <div class="settings-section">
+                    <h3><i class="fas fa-envelope"></i> SMTP Settings</h3>
+                    <form id="smtpForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="smtp_server">SMTP Server</label>
+                                <input type="text" id="smtp_server" name="smtp_server" placeholder="smtp.gmail.com">
+                                <small>SMTP server hostname</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp_port">SMTP Port</label>
+                                <input type="number" id="smtp_port" name="smtp_port" placeholder="587" min="1" max="65535">
+                                <small>SMTP server port (usually 587 for TLS)</small>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="smtp_username">Username</label>
+                                <input type="text" id="smtp_username" name="smtp_username" placeholder="your-email@gmail.com">
+                                <small>SMTP authentication username</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp_password">Password</label>
+                                <input type="password" id="smtp_password" name="smtp_password" placeholder="your-app-password">
+                                <small>SMTP authentication password (use app password for Gmail)</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="smtp_from_email">From Email</label>
+                            <input type="email" id="smtp_from_email" name="smtp_from_email" placeholder="notifications@yourcompany.com">
+                            <small>Sender email address for notifications</small>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="smtp_use_tls" name="smtp_use_tls">
+                                <label for="smtp_use_tls">Use TLS Encryption</label>
+                            </div>
+                            <small>Enable TLS encryption for secure email transmission</small>
+                        </div>
+                        <div class="btn-group">
+                            <input type="email" id="test_email" placeholder="test@example.com" style="max-width: 250px;">
+                            <button type="button" id="testEmailBtn" class="test-btn">
+                                <i class="fas fa-paper-plane"></i> Test Email
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Default Email Settings -->
+                <div class="settings-section">
+                    <h3><i class="fas fa-at"></i> Default Email Settings</h3>
+                    <form id="emailForm">
+                        <div class="form-group">
+                            <label for="default_to_email">Default Recipient Email</label>
+                            <input type="email" id="default_to_email" name="default_to_email" placeholder="admin@yourcompany.com">
+                            <small>Default email address for SSL expiry notifications</small>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Default Slack Settings -->
+                <div class="settings-section">
+                    <h3><i class="fab fa-slack"></i> Default Slack Settings</h3>
+                    <form id="slackForm">
+                        <div class="form-group">
+                            <label for="default_slack_webhook">Slack Webhook URL</label>
+                            <input type="url" id="default_slack_webhook" name="default_slack_webhook" placeholder="https://hooks.slack.com/services/...">
+                            <small>Default Slack webhook URL for notifications</small>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="slack_channel">Channel</label>
+                                <input type="text" id="slack_channel" name="slack_channel" placeholder="#ssl-alerts">
+                                <small>Default Slack channel</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="slack_username">Bot Username</label>
+                                <input type="text" id="slack_username" name="slack_username" placeholder="SSL Checker Bot">
+                                <small>Bot display name</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="slack_icon_emoji">Bot Emoji</label>
+                            <input type="text" id="slack_icon_emoji" name="slack_icon_emoji" placeholder=":warning:">
+                            <small>Emoji icon for the bot</small>
+                        </div>
+                        <div class="btn-group">
+                            <button type="button" id="testSlackBtn" class="test-btn">
+                                <i class="fab fa-slack"></i> Test Slack
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Notification Settings -->
+                <div class="settings-section">
+                    <h3><i class="fas fa-bell"></i> Notification Settings</h3>
+                    <form id="notificationForm">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="notifications_enabled" name="notifications_enabled">
+                                <label for="notifications_enabled">Enable Notifications</label>
+                            </div>
+                            <small>Master switch for all notification types</small>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="email_enabled" name="email_enabled">
+                                    <label for="email_enabled">Enable Email Notifications</label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="slack_enabled" name="slack_enabled">
+                                    <label for="slack_enabled">Enable Slack Notifications</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="schedule_time">Daily Check Time</label>
+                                <input type="time" id="schedule_time" name="schedule_time">
+                                <small>Time of day to run automated checks (24-hour format)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="expiry_thresholds">Expiry Thresholds (days)</label>
+                                <input type="text" id="expiry_thresholds" name="expiry_thresholds" placeholder="7,15,30">
+                                <small>Comma-separated days before expiry to send alerts</small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Save Button -->
+                <div class="btn-group">
+                    <button type="button" id="saveBtn" class="btn btn-primary">
+                        <i class="fas fa-save"></i>
+                        Save All Settings
+                    </button>
+                    <button type="button" id="resetBtn" class="btn btn-secondary">
+                        <i class="fas fa-undo"></i>
+                        Reset to Defaults
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2025 Good SSL Checker v1.20 - Made by <a href="https://github.com/birolbenli/good-ssl-checker" target="_blank" style="color: rgba(255, 255, 255, 0.9);">Birol Benli</a></p>
+    </footer>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // Load settings on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSettings();
+        });
+
+        function loadSettings() {
+            fetch('/api/settings')
+                .then(response => response.json())
+                .then(data => {
+                    // SMTP Settings
+                    if (data.smtp) {
+                        Object.keys(data.smtp).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) {
+                                if (element.type === 'checkbox') {
+                                    element.checked = data.smtp[key].value;
+                                } else {
+                                    element.value = data.smtp[key].value;
+                                }
+                            }
+                        });
+                    }
+
+                    // Email Settings
+                    if (data.email) {
+                        Object.keys(data.email).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) {
+                                element.value = data.email[key].value;
+                            }
+                        });
+                    }
+
+                    // Slack Settings
+                    if (data.slack) {
+                        Object.keys(data.slack).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) {
+                                element.value = data.slack[key].value;
+                            }
+                        });
+                    }
+
+                    // Notification Settings
+                    if (data.notifications) {
+                        Object.keys(data.notifications).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) {
+                                if (element.type === 'checkbox') {
+                                    element.checked = data.notifications[key].value;
+                                } else {
+                                    element.value = data.notifications[key].value;
+                                }
+                            }
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading settings:', error);
+                    showAlert('Failed to load settings', 'error');
+                });
+        }
+
+        function saveSettings() {
+            const formData = {};
+            
+            // Collect all form data
+            const forms = ['smtpForm', 'emailForm', 'slackForm', 'notificationForm'];
+            forms.forEach(formId => {
+                const form = document.getElementById(formId);
+                const formDataObj = new FormData(form);
+                
+                for (let [key, value] of formDataObj.entries()) {
+                    const element = document.getElementById(key);
+                    if (element && element.type === 'checkbox') {
+                        formData[key] = element.checked;
+                    } else {
+                        formData[key] = value;
+                    }
+                }
+            });
+
+            // Add unchecked checkboxes
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                if (!formData.hasOwnProperty(checkbox.name)) {
+                    formData[checkbox.name] = checkbox.checked;
+                }
+            });
+
+            // Show loading state
+            document.body.classList.add('loading');
+            
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.body.classList.remove('loading');
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert(data.error || 'Failed to save settings', 'error');
+                }
+            })
+            .catch(error => {
+                document.body.classList.remove('loading');
+                console.error('Error saving settings:', error);
+                showAlert('Failed to save settings', 'error');
+            });
+        }
+
+        function testEmail() {
+            const testEmail = document.getElementById('test_email').value;
+            if (!testEmail) {
+                showAlert('Please enter a test email address', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('testEmailBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+            fetch('/api/settings/test-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ test_email: testEmail })
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Test Email';
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert(data.error || 'Email test failed', 'error');
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Test Email';
+                console.error('Error testing email:', error);
+                showAlert('Email test failed', 'error');
+            });
+        }
+
+        function testSlack() {
+            const btn = document.getElementById('testSlackBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+            const webhookUrl = document.getElementById('default_slack_webhook').value;
+
+            fetch('/api/settings/test-slack', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ webhook_url: webhookUrl })
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fab fa-slack"></i> Test Slack';
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert(data.error || 'Slack test failed', 'error');
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fab fa-slack"></i> Test Slack';
+                console.error('Error testing Slack:', error);
+                showAlert('Slack test failed', 'error');
+            });
+        }
+
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        // Event listeners
+        document.getElementById('saveBtn').addEventListener('click', saveSettings);
+        document.getElementById('testEmailBtn').addEventListener('click', testEmail);
+        document.getElementById('testSlackBtn').addEventListener('click', testSlack);
+        
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to reset all settings to defaults? This cannot be undone.')) {
+                location.reload();
+            }
+        });
+    </script>
+</body>
+</html>

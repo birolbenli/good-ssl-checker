@@ -26,6 +26,10 @@
                     <i class="fas fa-calendar-alt"></i>
                     Expiry Tracking
                 </a>
+                <a href="/settings" class="nav-item">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </a>
                 <a href="/logout" class="nav-item logout">
                     <i class="fas fa-sign-out-alt"></i>
                     Logout
@@ -228,6 +232,12 @@
                                         <span class="tooltiptext">Send Notification</span>
                                     </div>
                                     <div class="tooltip">
+                                        <button class="btn-small btn-secondary subdomain-settings" data-subdomain-id="{{ subdomain.id }}">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <span class="tooltiptext">Settings</span>
+                                    </div>
+                                    <div class="tooltip">
                                         <button class="btn-small btn-danger delete-subdomain" data-subdomain-id="{{ subdomain.id }}">
                                             <i class="fas fa-trash"></i>
                                         </button>
@@ -368,6 +378,50 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary modal-close">Cancel</button>
                 <button type="submit" form="editSubdomainForm" class="btn btn-primary">Update</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subdomain Settings Modal -->
+    <div id="subdomainSettingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-cog"></i> Subdomain Notification Settings</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="subdomainSettingsForm">
+                    <input type="hidden" id="settingsSubdomainId" name="subdomain_id">
+                    
+                    <div class="form-group">
+                        <label for="settingsSubdomainName">Subdomain</label>
+                        <input type="text" id="settingsSubdomainName" name="subdomain_name" readonly class="readonly-field">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customEmail">Custom Email (override default)</label>
+                        <input type="email" id="customEmail" name="custom_email" placeholder="Leave empty to use default email setting">
+                        <small>If specified, this email will be used instead of the default email from settings</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customSlackWebhook">Custom Slack Webhook (override default)</label>
+                        <input type="url" id="customSlackWebhook" name="custom_slack_webhook" placeholder="Leave empty to use default Slack webhook">
+                        <small>If specified, this webhook will be used instead of the default Slack webhook from settings</small>
+                    </div>
+                    
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <strong>Note:</strong> SMTP settings (server, port, username, password) are always taken from the global settings. 
+                            Only the recipient email and Slack webhook can be customized per subdomain.
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                <button type="submit" form="subdomainSettingsForm" class="btn btn-primary">Update Settings</button>
             </div>
         </div>
     </div>

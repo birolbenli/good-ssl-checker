@@ -24,6 +24,9 @@ class DomainDetailManager {
         this.editSubdomainModal = document.getElementById('editSubdomainModal');
         this.editSubdomainForm = document.getElementById('editSubdomainForm');
         
+        this.subdomainSettingsModal = document.getElementById('subdomainSettingsModal');
+        this.subdomainSettingsForm = document.getElementById('subdomainSettingsForm');
+        
         this.progressSection = document.getElementById('progressSection');
         this.progressFill = document.getElementById('progressFill');
         this.progressText = document.getElementById('progressText');
@@ -50,6 +53,9 @@ class DomainDetailManager {
 
         // Form events
         this.addSubdomainForm.addEventListener('submit', (e) => this.handleAddSubdomain(e));
+        if (this.subdomainSettingsForm) {
+            this.subdomainSettingsForm.addEventListener('submit', (e) => this.handleSubdomainSettings(e));
+        }
 
         // Modal events
         document.querySelectorAll('.modal-close').forEach(btn => {
@@ -75,6 +81,11 @@ class DomainDetailManager {
         // Edit subdomain buttons
         document.querySelectorAll('.edit-subdomain').forEach(btn => {
             btn.addEventListener('click', (e) => this.handleEditSubdomain(e));
+        });
+
+        // Subdomain settings buttons
+        document.querySelectorAll('.subdomain-settings').forEach(btn => {
+            btn.addEventListener('click', (e) => this.handleSubdomainSettingsShow(e));
         });
 
         // Send notification buttons
@@ -549,6 +560,71 @@ class DomainDetailManager {
             // Re-enable button
             button.disabled = false;
             button.innerHTML = '<i class="fas fa-bell"></i>';
+        }
+    }
+
+    handleSubdomainSettingsShow(e) {
+        e.preventDefault();
+        const subdomainId = e.target.closest('button').getAttribute('data-subdomain-id');
+        const row = e.target.closest('tr');
+        
+        // Get subdomain data from the row
+        const subdomainName = row.querySelector('td:nth-child(2)').textContent.trim();
+        
+        // Find current custom settings from database if available
+        this.loadSubdomainSettings(subdomainId, subdomainName);
+    }
+
+    async loadSubdomainSettings(subdomainId, subdomainName) {
+        try {
+            // Populate modal with current data
+            document.getElementById('settingsSubdomainId').value = subdomainId;
+            document.getElementById('settingsSubdomainName').value = subdomainName;
+            
+            // For now, clear the custom fields - they will be loaded from database during page load if available
+            document.getElementById('customEmail').value = '';
+            document.getElementById('customSlackWebhook').value = '';
+            
+            // Show modal
+            this.subdomainSettingsModal.style.display = 'block';
+            
+        } catch (error) {
+            console.error('Error loading subdomain settings:', error);
+            this.showToast('Failed to load subdomain settings', 'error');
+        }
+    }
+
+    async handleSubdomainSettings(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this.subdomainSettingsForm);
+        const subdomainId = formData.get('subdomain_id');
+        
+        const data = {
+            custom_email: formData.get('custom_email').trim(),
+            custom_slack_webhook: formData.get('custom_slack_webhook').trim()
+        };
+
+        try {
+            const response = await fetch(`/expire-tracking/subdomain/${subdomainId}/update-settings`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.closeModals();
+                this.showToast(result.message || 'Subdomain settings updated successfully!', 'success');
+            } else {
+                this.showToast(result.error || 'Failed to update subdomain settings', 'error');
+            }
+        } catch (error) {
+            console.error('Error updating subdomain settings:', error);
+            this.showToast('Failed to update subdomain settings', 'error');
         }
     }
 }
