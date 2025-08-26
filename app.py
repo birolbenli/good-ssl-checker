@@ -576,16 +576,12 @@ def update_settings_api():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        print(f"Settings update received: {data}")
-        
         updated_count = 0
         with get_db_connection() as conn:
             for key, value in data.items():
                 # Convert boolean values to string
                 if isinstance(value, bool):
                     value = 'true' if value else 'false'
-                
-                print(f"Updating setting: {key} = {value}")
                 
                 conn.execute('''
                     UPDATE settings SET value = ?, updated_at = ?
@@ -595,15 +591,12 @@ def update_settings_api():
             
             conn.commit()
         
-        print(f"Updated {updated_count} settings successfully")
-        
         return jsonify({
             'success': True, 
             'message': f'{updated_count} settings updated successfully'
         })
         
     except Exception as e:
-        print(f"Settings update error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/settings/test-email', methods=['POST'])
@@ -624,14 +617,6 @@ def test_email_settings():
         smtp_password = get_setting('smtp_password')
         from_email = get_setting('smtp_from_email')
         use_tls = get_setting('smtp_use_tls', 'true').lower() == 'true'
-        
-        print(f"SMTP Settings Debug:")
-        print(f"  Server: {smtp_server}")
-        print(f"  Port: {smtp_port_str}")
-        print(f"  Username: {smtp_username}")
-        print(f"  Password: {'***' if smtp_password else 'EMPTY'}")
-        print(f"  From Email: {from_email}")
-        print(f"  Use TLS: {use_tls}")
         
         # Validate settings
         missing_settings = []
@@ -682,7 +667,6 @@ def test_email_settings():
         })
         
     except Exception as e:
-        print(f"Email test error: {e}")
         return jsonify({'error': f'Email test failed: {str(e)}'}), 500
 
 @app.route('/api/settings/test-slack', methods=['POST'])
@@ -1663,7 +1647,12 @@ if __name__ == '__main__':
     # Create instance directory
     os.makedirs('instance', exist_ok=True)
     
+    # Initialize database and default settings
+    with app.app_context():
+        init_db()
+        init_default_settings()
+    
     # Setup scheduled notifications
     setup_scheduler()
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
